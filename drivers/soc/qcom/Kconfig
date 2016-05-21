@@ -940,3 +940,7 @@ config MODEMSMEM
 	---help---
 	Enable to pass device information and other data to shared memory for
 	the modem subsystem
+
+config STATE_NOTIFIER
+	bool "State Notifier"
+	default y

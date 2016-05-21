@@ -109,6 +109,7 @@ obj-$(CONFIG_MSM_BAM_DMUX) += bam_dmux.o
 obj-$(CONFIG_WCNSS_CORE) += wcnss/
 obj-$(CONFIG_BIG_CLUSTER_MIN_FREQ_ADJUST) += big_cluster_min_freq_adjust.o
 obj-$(CONFIG_MODEMSMEM) += modemsmem/
+obj-$(CONFIG_STATE_NOTIFIER)		+= state_notifier.o
 
 # TODO: remove me b/62058353
 subdir-ccflags-y += \
