@@ -25,16 +25,11 @@
 #include <linux/state_notifier.h>
 #endif
 
-#ifdef CONFIG_SCHED_WALT
-unsigned long boosted_cpu_util(int cpu);
-#endif
-
 /* Stub out fast switch routines present on mainline to reduce the backport
  * overhead. */
 #define cpufreq_driver_fast_switch(x, y) 0
 #define cpufreq_enable_fast_switch(x)
 #define cpufreq_disable_fast_switch(x)
-#define LATENCY_MULTIPLIER			(2000)
 #define DKGOV_KTHREAD_PRIORITY	50
 
 #define BOOST_PERC					5
@@ -87,6 +82,8 @@ struct dkgov_cpu {
 	unsigned long iowait_boost;
 	unsigned long iowait_boost_max;
 	u64 last_update;
+
+	struct sched_walt_cpu_load walt_load;
 
 	/* The fields below are only needed when sharing a policy. */
 	unsigned long util;
@@ -316,6 +313,7 @@ static void dkgov_get_util(unsigned long *util, unsigned long *max, u64 time)
 	struct rq *rq = cpu_rq(cpu);
 	unsigned long max_cap, rt;
 	s64 delta;
+	struct dkgov_cpu *loadcpu = &per_cpu(dkgov_cpu, cpu);
 
 	max_cap = arch_scale_cpu_capacity(NULL, cpu);
 
@@ -329,7 +327,7 @@ static void dkgov_get_util(unsigned long *util, unsigned long *max, u64 time)
 	*util = min(rq->cfs.avg.util_avg + rt, max_cap);
 #ifdef CONFIG_SCHED_WALT
 	if (!walt_disabled && sysctl_sched_use_walt_cpu_util)
-		*util = boosted_cpu_util(cpu);
+		*util = boosted_cpu_util(cpu, &loadcpu->walt_load);
 #endif
 	*max = max_cap;
 }
@@ -499,7 +497,7 @@ static void dkgov_irq_work(struct irq_work *irq_work)
 	 * after the work_in_progress flag is cleared. The effects of that are
 	 * neglected for now.
 	 */
-	queue_kthread_work(&sg_policy->worker, &sg_policy->work);
+	kthread_queue_work(&sg_policy->worker, &sg_policy->work);
 }
 
 /************************** sysfs interface ************************/
@@ -666,8 +664,8 @@ static int dkgov_kthread_create(struct dkgov_policy *sg_policy)
 	if (policy->fast_switch_enabled)
 		return 0;
 
-	init_kthread_work(&sg_policy->work, dkgov_work);
-	init_kthread_worker(&sg_policy->worker);
+	kthread_init_work(&sg_policy->work, dkgov_work);
+	kthread_init_worker(&sg_policy->worker);
 	thread = kthread_create(kthread_worker_fn, &sg_policy->worker,
 				"dkgov:%d",
 				cpumask_first(policy->related_cpus));
@@ -686,7 +684,7 @@ static int dkgov_kthread_create(struct dkgov_policy *sg_policy)
 	sg_policy->thread = thread;
 	kthread_bind_mask(thread, policy->related_cpus);
 	/* NB: wake up so the thread does not look hung to the freezer */
-	wake_up_process_no_notif(thread);
+	wake_up_process(thread);
 
 	return 0;
 }
@@ -697,7 +695,7 @@ static void dkgov_kthread_stop(struct dkgov_policy *sg_policy)
 	if (sg_policy->policy->fast_switch_enabled)
 		return;
 
-	flush_kthread_worker(&sg_policy->worker);
+	kthread_flush_worker(&sg_policy->worker);
 	kthread_stop(sg_policy->thread);
 }
 
@@ -839,7 +837,7 @@ free_sg_policy:
 	return ret;
 }
 
-static int dkgov_exit(struct cpufreq_policy *policy)
+static void dkgov_exit(struct cpufreq_policy *policy)
 {
 	struct dkgov_policy *sg_policy = policy->governor_data;
 	struct dkgov_tunables *tunables = sg_policy->tunables;
@@ -860,7 +858,7 @@ static int dkgov_exit(struct cpufreq_policy *policy)
 	dkgov_kthread_stop(sg_policy);
 	dkgov_policy_free(sg_policy);
 
-	return 0;
+	return;
 }
 
 static int dkgov_start(struct cpufreq_policy *policy)
@@ -905,7 +903,7 @@ static int dkgov_start(struct cpufreq_policy *policy)
 	return 0;
 }
 
-static int dkgov_stop(struct cpufreq_policy *policy)
+static void dkgov_stop(struct cpufreq_policy *policy)
 {
 	struct dkgov_policy *sg_policy = policy->governor_data;
 	unsigned int cpu;
@@ -918,10 +916,10 @@ static int dkgov_stop(struct cpufreq_policy *policy)
 	irq_work_sync(&sg_policy->irq_work);
 	kthread_cancel_work_sync(&sg_policy->work);
 
-	return 0;
+	return;
 }
 
-static int dkgov_limits(struct cpufreq_policy *policy)
+static void dkgov_limits(struct cpufreq_policy *policy)
 {
 	struct dkgov_policy *sg_policy = policy->governor_data;
 
@@ -933,26 +931,7 @@ static int dkgov_limits(struct cpufreq_policy *policy)
 
 	sg_policy->need_freq_update = true;
 
-	return 0;
-}
-
-static int cpufreq_darknesssched_cb(struct cpufreq_policy *policy,
-				unsigned int event)
-{
-	switch(event) {
-	case CPUFREQ_GOV_POLICY_INIT:
-		return dkgov_init(policy);
-	case CPUFREQ_GOV_POLICY_EXIT:
-		return dkgov_exit(policy);
-	case CPUFREQ_GOV_START:
-		return dkgov_start(policy);
-	case CPUFREQ_GOV_STOP:
-		return dkgov_stop(policy);
-	case CPUFREQ_GOV_LIMITS:
-		return dkgov_limits(policy);
-	default:
-		BUG();
-	}
+	return;
 }
 
 #ifndef CONFIG_CPU_FREQ_DEFAULT_GOV_DARKNESSSCHED
@@ -960,7 +939,11 @@ static
 #endif
 struct cpufreq_governor darknesssched_gov = {
 	.name = "darknesssched",
-	.governor = cpufreq_darknesssched_cb,
+	.init = dkgov_init,
+	.exit = dkgov_exit,
+	.start = dkgov_start,
+	.stop = dkgov_stop,
+	.limits = dkgov_limits,
 	.owner = THIS_MODULE,
 };
 
