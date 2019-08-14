@@ -36,11 +36,11 @@ unsigned long boosted_cpu_util(int cpu);
 #define cpufreq_disable_fast_switch(x)
 #define ACGOV_KTHREAD_PRIORITY	50
 
-#ifdef CONFIG_MACH_MSM8996_H1
+#ifdef CONFIG_ARCH_SDM845
 #define UP_RATE_LIMIT_US			(20000)
 #define UP_RATE_LIMIT_US_BIGC		(10000)
 #define DOWN_RATE_LIMIT_US			(20000)
-#define FREQ_RESPONSIVENESS			1036800
+#define FREQ_RESPONSIVENESS			1056000
 #define PUMP_INC_STEP_AT_MIN_FREQ	6
 #define PUMP_INC_STEP				3
 #define PUMP_DEC_STEP_AT_MIN_FREQ	3
@@ -119,54 +119,60 @@ struct acgov_cpu {
 static DEFINE_PER_CPU(struct acgov_cpu, acgov_cpu);
 static DEFINE_PER_CPU(struct acgov_tunables, cached_tunables);
 
-#ifdef CONFIG_MACH_MSM8996_H1
-#define LITTLE_NFREQS				16
-#define BIG_NFREQS					25
+#ifdef CONFIG_ARCH_SDM845
+#define LITTLE_NFREQS				21
+#define BIG_NFREQS					26
 static unsigned long little_capacity[LITTLE_NFREQS][2] = {
-	{0, 149},
-	{149, 225},
-	{225, 257},
-	{257, 281},
-	{281, 315},
-	{315, 368},
-	{368, 406},
-	{406, 469},
-	{469, 502},
-	{502, 538},
-	{538, 581},
-	{581, 611},
-	{611, 648},
-	{648, 684},
-	{684, 729},
-	{729, 763}
+	{0, 300000},
+	{300000, 422400},
+	{422400, 499200},
+	{499200, 576000},
+	{576000, 652800},
+	{652800, 748800},
+	{748800, 825600},
+	{825600, 902400},
+	{902400, 979200},
+	{979200, 1056000},
+	{1056000, 1132800},
+	{1132800, 1209600},
+	{1209600, 1286400},
+	{1286400, 1363200},
+	{1363200, 1440000},
+	{1440000, 1516800},
+	{1516800, 1593600},
+	{1593600, 1651200},
+	{1651200, 1670400},
+	{1670400, 1708800},
+	{1708800, 1747200}
 };
 
 static unsigned long big_capacity[BIG_NFREQS][2] = {
-	{0, 149},
-	{149, 188},
-	{188, 225},
-	{225, 257},
-	{257, 281},
-	{281, 315},
-	{315, 348},
-	{348, 374},
-	{374, 428},
-	{428, 469},
-	{469, 502},
-	{502, 538},
-	{538, 581},
-	{581, 611},
-	{611, 648},
-	{648, 684},
-	{684, 729},
-	{729, 763},
-	{763, 795},
-	{795, 832},
-	{832, 868},
-	{868, 905},
-	{905, 952},
-	{952, 979},
-	{979, 1024}
+	{0, 300000},
+	{300000, 422400},
+	{422400, 499200},
+	{499200, 576000},
+	{576000, 652800},
+	{652800, 729600},
+	{729600, 806400},
+	{806400, 883200},
+	{883200, 960000},
+	{960000, 1036800},
+	{1036800, 1113600},
+	{1113600, 1190400},
+	{1190400, 1267200},
+	{1267200, 1344000},
+	{1344000, 1420800},
+	{1420800, 1497600},
+	{1497600, 1574400},
+	{1574400, 1651200},
+	{1651200, 1728000},
+	{1728000, 1804800},
+	{1804800, 1881600},
+	{1881600, 1958400},
+	{1958400, 2035000},
+	{2035000, 2092000,
+	{2092000, 2112000},
+	{2112000, 2208000}
 };
 #endif
 
@@ -300,7 +306,7 @@ static unsigned int resolve_target_freq(struct cpufreq_policy *policy,
 	return target_freq;
 }
 
-#ifdef CONFIG_MACH_MSM8996_H1
+#ifdef CONFIG_ARCH_SDM845
 static void get_target_capacity(unsigned int cpu, int index,
 					unsigned long *down_cap, unsigned long *up_cap)
 {
@@ -353,7 +359,7 @@ static unsigned int get_next_freq(struct acgov_cpu *sg_cpu, unsigned long util,
 	int pump_inc_step = tunables->pump_inc_step;
 	int pump_dec_step = tunables->pump_dec_step;
 	unsigned int next_freq = 0;
-#ifdef CONFIG_MACH_MSM8996_H1
+#ifdef CONFIG_ARCH_SDM845
 	unsigned long down_cap = 0, up_cap = 0;
 	unsigned long cur_util =
 			util + ((util * tunables->boost_perc) / 100);
@@ -375,7 +381,7 @@ static unsigned int get_next_freq(struct acgov_cpu *sg_cpu, unsigned long util,
 		pump_inc_step = tunables->pump_inc_step_at_min_freq;
 		pump_dec_step = tunables->pump_dec_step_at_min_freq;
 	}
-#ifdef CONFIG_MACH_MSM8996_H1
+#ifdef CONFIG_ARCH_SDM845
 	get_target_capacity(policy->cpu, index, &down_cap, &up_cap);
 	if (cur_util >= up_cap
 		&& policy->cur < policy->max) {
@@ -1015,7 +1021,7 @@ static void get_tunables_data(struct acgov_tunables *tunables,
 	}
 
 initialize:
-#ifdef CONFIG_MACH_MSM8996_H1
+#ifdef CONFIG_ARCH_SDM845
 	if (cpu < 2)
 		tunables->up_rate_limit_us = UP_RATE_LIMIT_US;
 	else
